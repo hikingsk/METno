@@ -39,9 +39,9 @@ class METno extends METnoFactory {
      * @param <int|boolean>     $seeLevel - meters
      */
     public function __construct($lat, $lon, $seeLevel = false) {
-        $this->apiParameters       .= "lat=$lat;lon=$lon";
+        $this->apiParameters       .= "lat=$lat&lon=$lon";
         if (!is_bool($seeLevel)) {
-            $this->apiParameters   .= "&mls=$seeLevel";
+            $this->apiParameters   .= "&msl=$seeLevel";
         }
     }
 
@@ -52,7 +52,9 @@ class METno extends METnoFactory {
      * @throws Exception
      */
     protected function sendRequest($url) {
-
+        
+        $userAgent = (self::$userAgent == "") ? strip_tags($_SERVER['SERVER_SIGNATURE']) : self::$userAgent;
+        
         try {
 
             $curl = curl_init();
@@ -61,8 +63,13 @@ class METno extends METnoFactory {
             curl_setopt($curl, CURLOPT_HEADER, 0);
             curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-
-            curl_setopt($curl, CURLOPT_USERAGENT, 'Mozilla/5.001 (windows; U; NT4.0; en-US; rv:1.0) Gecko/25250101');
+            curl_setopt($curl, CURLOPT_USERAGENT, self::$userAgent);
+            
+            if (self::$logCurl){
+                curl_setopt($curl, CURLOPT_VERBOSE, true);
+                $verbose = fopen(self::$cacheDir."curl.log", 'a+');
+                curl_setopt($curl, CURLOPT_STDERR, $verbose);
+            }
 
             $content = curl_exec($curl);
 
@@ -347,14 +354,19 @@ class METno extends METnoFactory {
                                         $precipitationAttributes    = $forecast->location->precipitation->attributes();
 
                                         $forecastByDay[$fromDate][$fromHour]["symbols"][$toHour]     = array(
-                                            "from"          => $fromHour,       // from hour
-                                            "to"            => $toHour,         // to hour
-                                            "difference"    => $difference,     // difference in hours betwen from to to
-                                            "symbol"        => new self::$classSymbol(self::getAttributeValue($symbolAttributes, "number",0),
-                                                                                     self::getAttributeValue($symbolAttributes, "id")),
-                                            "precipitation" => new self::$classPrecipitation(self::getAttributeValue($precipitationAttributes, "value",1),
-                                                                                     self::getAttributeValue($precipitationAttributes, "minvalue",1),
-                                                                                     self::getAttributeValue($precipitationAttributes, "maxvalue",1))
+                                            "from"          =>  $fromHour,       // from hour
+                                            "to"            =>  $toHour,         // to hour
+                                            "difference"    =>  $difference,     // difference in hours betwen from to to
+                                            "symbol"        =>  new self::$classSymbol(
+                                                self::getAttributeValue($symbolAttributes, "number", 0),
+                                                self::getAttributeValue($symbolAttributes, "id"),
+                                                self::$symbolsContentType
+                                            ),
+                                            "precipitation" =>  new self::$classPrecipitation(
+                                                self::getAttributeValue($precipitationAttributes, "value", 1),
+                                                self::getAttributeValue($precipitationAttributes, "minvalue", 1),
+                                                self::getAttributeValue($precipitationAttributes, "maxvalue", 1)
+                                            )
                                         );
 
                                     }

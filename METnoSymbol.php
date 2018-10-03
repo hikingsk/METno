@@ -16,15 +16,18 @@ class METnoSymbol {
      * @var METnoForecast 
      */
     protected $weather;
-    
     protected $name         = "NONE";
     protected $number       = 1;
-    
-    protected $imageUrl     = "http://api.met.no/weatherapi/weathericon/1.1/?symbol={code};content_type=image/png";
+    protected $contentType  = "image/png";
+    protected $imageUrl     = "http://api.met.no/weatherapi/weathericon/1.1/?symbol={code}&content_type={content_type}";
             
-    public function __construct($number,$name) {
+    public function __construct($number,$name,$contentType = "image/png") {
         $this->name     = $name;
         $this->number   = $number;
+        
+        if ($contentType == "image/png" || $contentType == "image/svg+xml") {
+            $this->contentType = urlencode($contentType);    
+        }
     }
     
     public function setWeather(METnoForecast $weather) {
@@ -41,12 +44,13 @@ class METnoSymbol {
     }
     
     public function getUrl() {
-        $url    = str_replace("{code}",$this->number,$this->imageUrl);
+        $url    = str_replace("{code}", $this->number, $this->imageUrl);
+        $url    = str_replace("{content_type}", $this->contentType, $url);
         /**
          * Detects if its night and show the right symbol
          */
         if ($this->isNight()) {
-            $url.=";is_night=1";
+            $url.="&is_night=1";
         }
         
         return $url;
@@ -56,8 +60,8 @@ class METnoSymbol {
         return is_object($this->weather) && is_object($this->weather->getMODay()) && $this->weather->isNight();
     }
     
-    public function getHTML() {
-        return "<img src='".$this->getUrl()."' alt='".$this->name."'/>";
+    public function getHTML($class = '') {
+        return '<img class="'.$class.'" src="'.$this->getUrl().'" alt="'.$this->name.'"/>';
     }
     
     public function __toString() {

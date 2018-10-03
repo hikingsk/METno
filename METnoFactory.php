@@ -102,6 +102,24 @@ class METnoFactory implements METnoInterface {
     static protected $displayErrors             = false;
 
     /**
+     * Log CURL requests
+     * @var boolean 
+     */
+    static protected $logCurl                   = false;
+
+    /**
+     * Folder for caching by location and hour
+     * @var string 
+     */
+    static protected $userAgent                 = "";
+    
+    /**
+     * Content Type of icons
+     * @var string 
+     */
+    static protected $symbolsContentType        = "image/png";
+
+    /**
      * Display error and stop php
      * @param type $set
      */
@@ -115,6 +133,14 @@ class METnoFactory implements METnoInterface {
      */
     static public function setDisplayErrors($set = true) {
         self::$displayErrors = $set;
+    }
+    
+    /**
+     * Log Curl requests
+     * @param type $set
+     */
+    static public function setLogCurl($set = true) {
+        self::$logCurl = $set;
     }
     
     /**
@@ -223,6 +249,57 @@ class METnoFactory implements METnoInterface {
             return true;
         }
         return false;
+    }
+    
+    /**
+     * Sets cache directory
+     * 
+     * - directory must exist and must be writable by webserver process
+     * 
+     * @param string $dir - directory with trailing slash
+     * @return boolean
+     */
+    static public function setCacheDir($dir) {
+        if (is_dir($dir)) {
+            self::$cacheDir = $dir;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * Sets Symbols Content Type
+     * 
+     * - when requesting symbols from MET.no
+     * 
+     * @param string $symbolsContentType - "image/png" or "image/svg+xml"
+     * @return boolean
+     */
+    static public function setSymbolsContentType($contentType) {
+        if ($contentType == "image/png" || $contentType == "image/svg+xml") {
+            self::$symbolsContentType = $contentType;
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * Sets UserAgent for cURL requests
+     * 
+     * - as of MET.no terms of service, UserAgent should contain your app information including email address
+     * 
+     * @param string $userAgent - at least 8 characters
+     * @return boolean
+     */
+    static public function setUserAgent($userAgent) {
+        if (strlen($userAgent) > 8) {
+            self::$userAgent = $userAgent;
+            return true;
+        } else {
+            return false;
+        }
     }
     
     static protected function loadClass($class_name) {
