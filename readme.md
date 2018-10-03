@@ -3,7 +3,7 @@
 Small library for getting forecast for given coordinates. Updated to newest API, originally made in 2012.
 
 Endpoint: http://api.met.no/weatherapi/
-Endpoint version: 1.8
+Endpoint version: 1.9
 
 ## Usage
 
@@ -11,9 +11,9 @@ Basic usage you can find in example.php
 
 You can install this library via composer or download the classes and to load all the classes you can use loader_METno.php
 
-Add to composer require
+Add to composer require (requires addid this GIT repository as VCS repo in your composer.json)
 
-	"neogenia/metno": ">=1.0.0"
+	"hikingsk/metno": ">=1.0.0"
 
 For best clean of cached xml files use a cron with sh script like this (delete files older than 1 day):
 
