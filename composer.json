@@ -15,7 +15,7 @@
             "name": "Ľubomír Mäkký",
             "email": "lubo@hiking.sk",
             "homepage" : "https://hiking.sk"
-        },
+        }
     ],
     "minimum-stability": "dev",
     "require": {
