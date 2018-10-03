@@ -112,12 +112,6 @@ class METnoFactory implements METnoInterface {
      * @var string 
      */
     static protected $userAgent                 = "";
-    
-    /**
-     * Content Type of icons
-     * @var string 
-     */
-    static protected $symbolsContentType        = "image/png";
 
     /**
      * Display error and stop php
@@ -262,23 +256,6 @@ class METnoFactory implements METnoInterface {
     static public function setCacheDir($dir) {
         if (is_dir($dir)) {
             self::$cacheDir = $dir;
-            return true;
-        } else {
-            return false;
-        }
-    }
-    
-    /**
-     * Sets Symbols Content Type
-     * 
-     * - when requesting symbols from MET.no
-     * 
-     * @param string $symbolsContentType - "image/png" or "image/svg+xml"
-     * @return boolean
-     */
-    static public function setSymbolsContentType($contentType) {
-        if ($contentType == "image/png" || $contentType == "image/svg+xml") {
-            self::$symbolsContentType = $contentType;
             return true;
         } else {
             return false;

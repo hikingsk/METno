@@ -9,11 +9,13 @@
     require_once 'loader_METno.php';
     
     METnoFactory::setHourForDayForecast(14);
-    METnoFactory::setTemperatureDecimals(0);
+    METnoFactory::setTemperatureDecimals(1);
     METnoFactory::setCacheDir("../../_METcache/");
-    METnoFactory::setSymbolsContentType("image/svg+xml");
     METnoFactory::setDisplayErrors(true);
     //METnoFactory::setLogCurl(true);
+    
+    METnoSymbol::setContentType("image/svg+xml");
+    
     
     $user_agent = $_SERVER['SERVER_SOFTWARE']." Server at " . $_SERVER['HTTP_HOST']." Script ".$_SERVER['SCRIPT_NAME']. " Admin ".$_SERVER["SERVER_ADMIN"];
     
@@ -47,14 +49,27 @@
     // same naming as the MET.no icons
     // you need to set the custom symbol class (or create own)
     
-    //METnoFactory::setSymbolClass("METnoCustomSymbol");
+    METnoFactory::setSymbolClass("METnoCustomSymbol");
+    METnoCustomSymbol::setFileFormat("svg");
     //$forecast = $forecastBrnoCustom->getForecastForXDays(5);
-    
-    $forecast5days = METnoFactory::getForecastByLatLon(49.199205, 16.598866)->getForecastForXDays(5);;
+
+    $forecast5days = METnoFactory::getForecastByLatLon(48.20292, 17.20429, 132)->getForecastForXDays(5);;
+    $array = [];
     
     foreach ($forecast5days as $day) {
-    	$iconPath = "img/weather/".$day->getSymbol();
-    	$temp = $day->getTemperature();
-    	$date = $day->getDate();
+        $array[] = [
+        	"iconPath" => "img/weather/".$day->getSymbol(),
+        	"temp" => $day->getTemperature(),
+        	"date" => $day->getDate(),
+        	"time" => $day->getTime(),
+        	"precipitation" => $day->getPrecipitation()->getValue(),
+        	"pressure" => $day->getPressure()." ".$day->getPressureUnit()
+        ];
     }  
+    
+    echo "<h1>Loop example</h1><pre>";
+    
+    print_r($array);
+    
+    echo "</pre>";
 ?>

@@ -11,23 +11,26 @@
  */
 
 class METnoSymbol {
-    /**
-     * For detection of day progress (night)
-     * @var METnoForecast 
-     */
+
     protected $weather;
     protected $name         = "NONE";
     protected $number       = 1;
-    protected $contentType  = "image/png";
+    static protected $contentType  = "image/png";
     protected $imageUrl     = "http://api.met.no/weatherapi/weathericon/1.1/?symbol={code}&content_type={content_type}";
             
-    public function __construct($number,$name,$contentType = "image/png") {
+    public function __construct($number,$name) {
         $this->name     = $name;
         $this->number   = $number;
-        
+    }
+    
+    static public function setContentType($contentType) {
         if ($contentType == "image/png" || $contentType == "image/svg+xml") {
-            $this->contentType = urlencode($contentType);    
+            self::$contentType = urlencode($contentType);
         }
+    }
+    
+    static public function getContentType() {
+        return self::$contentType;
     }
     
     public function setWeather(METnoForecast $weather) {
@@ -45,7 +48,7 @@ class METnoSymbol {
     
     public function getUrl() {
         $url    = str_replace("{code}", $this->number, $this->imageUrl);
-        $url    = str_replace("{content_type}", $this->contentType, $url);
+        $url    = str_replace("{content_type}", $this->getContentType(), $url);
         /**
          * Detects if its night and show the right symbol
          */

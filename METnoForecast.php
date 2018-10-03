@@ -183,6 +183,59 @@ class METnoForecast {
         return $this->temperature;
     }
     
+    public function getPrecipitation() {
+        return $this->precipitation;
+    }
+    
+    public function getPrecipitationInHours() {
+        return $this->precipitationInHours;
+    }
+    
+    public function getWindSpeed(){
+        return $this->windSpeed;
+    }
+    
+    public function getWindDegrees(){
+        return $this->windDegrees;
+    }
+    
+    public function getOrientation(){
+        return $this->windOrientation;
+    }
+    
+    public function getHumidity(){
+        return $this->humidity;
+    }
+    
+    public function getPressure(){
+        return $this->pressure;
+    }
+    
+    public function getPressureUnit(){
+        return $this->pressureUnit;
+    }
+    
+    public function getFog(){
+        return $this->fog;
+    }
+    
+    public function getCloudiness(){
+        return $this->cloudiness;
+    }
+    
+    public function geLowClouds(){
+        return $this->lowClouds;
+    }
+    
+    public function geMediumClouds(){
+        return $this->mediumClouds;
+    }
+    
+    public function geHighClouds(){
+        return $this->lowHigh;
+    }
+    
+    
     /**
      * Returns the symbol for the weather
      * @return METnoSymbol

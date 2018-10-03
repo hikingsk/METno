@@ -359,8 +359,7 @@ class METno extends METnoFactory {
                                             "difference"    =>  $difference,     // difference in hours betwen from to to
                                             "symbol"        =>  new self::$classSymbol(
                                                 self::getAttributeValue($symbolAttributes, "number", 0),
-                                                self::getAttributeValue($symbolAttributes, "id"),
-                                                self::$symbolsContentType
+                                                self::getAttributeValue($symbolAttributes, "id")
                                             ),
                                             "precipitation" =>  new self::$classPrecipitation(
                                                 self::getAttributeValue($precipitationAttributes, "value", 1),
