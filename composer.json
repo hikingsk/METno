@@ -1,6 +1,6 @@
 {
     "name": "hikingsk/metno",
-    "version" : "1.0.5",
+    "version" : "1.0.7",
     "description": "MET.no API library for fetching weather forecast",
     "type" : "library",
     "keywords" : ["MET.no", "weather", "forecast"],
@@ -19,7 +19,7 @@
     ],
     "minimum-stability": "dev",
     "require": {
-        "php" : ">=5.3.0",
+        "php" : ">=5.4.0",
         "ext-curl" : "*"
     },
     "autoload" : {

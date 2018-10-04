@@ -10,7 +10,7 @@
  * @uses METnoForecast Description
  */
 
-class METnoSymbol {
+class METnoSymbol implements JsonSerializable {
 
     protected $weather;
     protected $name         = "NONE";
@@ -69,6 +69,22 @@ class METnoSymbol {
     
     public function __toString() {
         return $this->getUrl();
+    }
+    
+    /**
+     * Exports the metnosymbol into serializable array
+     * @return array
+     */
+    
+    function jsonSerialize() {
+        return array(
+            "id" => $this->getNumber(),
+            "name" => $this->getName(),
+            "is" => array(
+                "night" => $this->isNight()
+            ),
+            "url" => $this->getUrl()
+        );
     }
 }
 ?>

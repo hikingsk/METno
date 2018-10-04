@@ -8,7 +8,7 @@
  * 
  */
 
-class METnoPrecipitation {
+class METnoPrecipitation implements JsonSerializable {
     protected $value    = 0;
     protected $min      = 0;
     protected $max      = 0;
@@ -33,6 +33,18 @@ class METnoPrecipitation {
     
     public function getMAX() {
         return $this->max;
+    }
+    
+    /**
+     * Exports the metnoprecipitation into serializable array
+     * @return array
+     */
+    function jsonSerialize(){
+        return array(
+            "value" => $this->getValue(),
+            "min" => $this->getMIN(),
+            "max" => $this->getMAX()
+        );
     }
 }
 ?>

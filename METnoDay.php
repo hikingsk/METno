@@ -12,7 +12,7 @@
  * @todo correct hour symbol from different symbol form to
  */
 
-class METnoDay extends METnoForecast {
+class METnoDay extends METnoForecast implements JsonSerializable {
     /**
      * For internal work with main METno instance (about location etc)
      * @var METno 
@@ -241,7 +241,7 @@ class METnoDay extends METnoForecast {
      * @return METnoForecast
      */
     public function getLowestTemperature() {
-        return $this->getLowestTemperatureForecast()->getTemperature();
+        return $this->hourForecastForTheLowestTemperature->getTemperature();
     }
     
     /**
@@ -249,7 +249,7 @@ class METnoDay extends METnoForecast {
      * @return METnoForecast
      */
     public function getLowestTemperatureForecast() {
-        return $this->hourForecastForTheLowestTemperature;
+        return $this->hourForecastForTheLowestTemperature->getHour();
     }
     
     /**
@@ -257,7 +257,7 @@ class METnoDay extends METnoForecast {
      * @return METnoForecast
      */
     public function getHighestTemperature() {
-        return $this->getHighestTemperatureForecast()->getTemperature();
+        return $this->hourForecastForHighestTemperature->getTemperature();
     }
     
     /**
@@ -265,7 +265,7 @@ class METnoDay extends METnoForecast {
      * @return METnoForecast
      */
     public function getHighestTemperatureForecast() {
-        return $this->hourForecastForHighestTemperature;
+        return $this->hourForecastForHighestTemperature->getHour();
     }
     
     /**
@@ -292,6 +292,29 @@ class METnoDay extends METnoForecast {
         }
         return $instance;
     }
-    
+    /**
+     * Exports the metnoday into serializable array
+     * @return array
+     */
+    public function jsonSerialize() {
+        return array(
+            "is" => array(
+                "today" => $this->isToday(),
+                "night" => $this->isNight()
+            ),
+            "forecast" => array(
+                "lowest" => array(
+                    "value" => $this->getLowestTemperature(),
+                    "forecast" => $this->getLowestTemperatureForecast()
+                ),
+                "highest" => array(
+                    "value" => $this->getHighestTemperature(),
+                    "forecast" => $this->getHighestTemperatureForecast()
+                ),
+                "night" => $this->getNightForecast(),
+                "hours" => $this->hourWeather
+            )
+        );
+    }  
 }
 ?>

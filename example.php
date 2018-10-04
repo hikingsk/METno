@@ -9,7 +9,8 @@
     require_once 'loader_METno.php';
     
     METnoFactory::setHourForDayForecast(14);
-    METnoFactory::setTemperatureDecimals(1);
+    METnoFactory::setTemperatureDecimals(0);
+    METnoFactory::setWindSpeedDecimals(0);
     METnoFactory::setCacheDir("../../_METcache/");
     METnoFactory::setDisplayErrors(true);
     //METnoFactory::setLogCurl(true);
@@ -21,16 +22,16 @@
     
     METnoFactory::setUserAgent($user_agent);
     
-    //Chopok
-    //$forecast = METnoFactory::getForecastByLatLon(48.94329, 19.5906, 1992);
+    $chopok = METnoFactory::getForecastByLatLon(48.94329, 19.5906, 1992);
+    $chatamrs = METnoFactory::getForecastByLatLon(48.926491, 19.650251, 1725);
     
-    //Chata  M.R.S.
-    $forecast = METnoFactory::getForecastByLatLon(48.926495, 19.650255, 1725);
+    
+    $forecast = $chopok;
     
     if ($forecast->isSuccess()) {
         
         echo "<h1>Today</h1>";
-        echo $forecast->today()->getTemperature();
+        echo $forecast->today();
         echo $forecast->today()->getSymbol()->getHTML();
         
         echo "<h1>Tomorrow</h1>";
@@ -52,8 +53,9 @@
     METnoFactory::setSymbolClass("METnoCustomSymbol");
     METnoCustomSymbol::setFileFormat("svg");
     //$forecast = $forecastBrnoCustom->getForecastForXDays(5);
-
-    $forecast5days = METnoFactory::getForecastByLatLon(48.20292, 17.20429, 132)->getForecastForXDays(5);;
+    
+    $forecast5days = $forecast->getForecastForXDays(5);;
+    
     $array = [];
     
     foreach ($forecast5days as $day) {
@@ -72,4 +74,11 @@
     print_r($array);
     
     echo "</pre>";
+    
+    echo "<h1>JSON example</h1><pre>";
+    
+    echo json_encode($forecast->today(), JSON_PRETTY_PRINT);
+    
+    echo "</pre>";
+    
 ?>

@@ -8,7 +8,7 @@
  * 
  */
 
-class METnoForecast {
+class METnoForecast implements JsonSerializable {
     private $parent                     = false;
     
     /**
@@ -39,7 +39,7 @@ class METnoForecast {
     
     /**
      * Precipitation (srážky) in mm
-     * @var type 
+     * @var int 
      */
     protected $precipitation            = 0;
     
@@ -91,7 +91,7 @@ class METnoForecast {
         }
         
         if (isset($mainXMLElement->windSpeed)) {
-            $this->windSpeed        = METnoFactory::getAttributeValue($mainXMLElement->windSpeed->attributes(), "value",  METnoFactory::getWindSpeedDecimals());
+            $this->windSpeed        = METnoFactory::getAttributeValue($mainXMLElement->windSpeed->attributes(), "mps",  METnoFactory::getWindSpeedDecimals());
         }
         
         if (isset($mainXMLElement->windDirection)) {
@@ -199,7 +199,7 @@ class METnoForecast {
         return $this->windDegrees;
     }
     
-    public function getOrientation(){
+    public function getWindOrientation(){
         return $this->windOrientation;
     }
     
@@ -223,16 +223,16 @@ class METnoForecast {
         return $this->cloudiness;
     }
     
-    public function geLowClouds(){
+    public function getLowClouds(){
         return $this->lowClouds;
     }
     
-    public function geMediumClouds(){
+    public function getMediumClouds(){
         return $this->mediumClouds;
     }
     
-    public function geHighClouds(){
-        return $this->lowHigh;
+    public function getHighClouds(){
+        return $this->lowClouds;
     }
     
     
@@ -242,6 +242,42 @@ class METnoForecast {
      */
     public function getSymbol() {
         return $this->symbol;
+    }
+    
+    /**
+     * Exports the metnoforecast into serializable array
+     * @return array
+     */
+    function jsonSerialize() {
+        return array(
+            "is" => array(
+                "night" => $this->isNight()
+            ),
+            "symbol" => $this->getSymbol(),
+            "temperature" => $this->getTemperature(),
+            "hour" => $this->getHour(),
+            "wind" => array(
+                "speed" => $this->getWindSpeed(),
+                "degrees" => $this->getWindDegrees(),
+                "orientation" => $this->getWindOrientation()
+            ),
+            "precipitation" => array(
+                "first" => $this->getPrecipitation(),
+                "inHours" => $this->getPrecipitationInHours()
+            ),
+            "humidity" => $this->getHumidity(),
+            "pressure" => array(
+                "unit" => $this->getPressureUnit(),
+                "value" => $this->getPressure()
+            ),
+            "fog" => $this->getFog(),
+            "clouds" => array(
+                "cloudiness" => $this->getCloudiness(),
+                "low" => $this->getLowClouds(),
+                "medium" => $this->getMediumClouds(),
+                "high" => $this->getHighClouds()
+            )
+        );
     }
     
     
