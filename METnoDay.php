@@ -18,9 +18,11 @@ class METnoDay extends METnoForecast implements JsonSerializable {
      * @var METno 
      */
     protected $metNo                    = false;     
-    
+
+	/** @var bool  */
     protected $today                    = false;
-    
+
+    /** @var METnoDay[] */
     protected $hourWeather              = array();    
     
     /**
@@ -207,21 +209,31 @@ class METnoDay extends METnoForecast implements JsonSerializable {
     public function isToday() {
         return $this->today;
     }
-    
+
     /**
      * Returns self becouse of overiding the hour forecast
      * @return \METnoDay
      */
-    public function getMETDay() {
+    public function getMETDay()
+    {
         return $this;
     }
-    
+
+	/**
+	 * @return METnoDay[]
+	 */
+    public function getHourWeather()
+    {
+        return $this->hourWeather;
+    }
+
     /**
      * Return the hour forecast if exist, if not, return self
      * @param int $hour
      * @return METnoForecast
      */
-    public function getForecastForHour($hour) {
+    public function getForecastForHour($hour)
+    {
         if (isset($this->hourWeather[$hour])) {
             return $this->hourWeather[$hour];
         } else {
@@ -317,4 +329,3 @@ class METnoDay extends METnoForecast implements JsonSerializable {
         );
     }  
 }
-?>

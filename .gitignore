@@ -10,3 +10,5 @@ nbactions.xml
 nb-configuration.xml
 .nb-gradle/
 _METcache
+.idea/
+
