@@ -16,7 +16,7 @@ class METnoSymbol implements JsonSerializable {
     protected $name         = "NONE";
     protected $number       = 1;
     static protected $contentType  = "image/png";
-    protected $imageUrl     = "http://api.met.no/weatherapi/weathericon/1.1/?symbol={code}&content_type={content_type}";
+    protected $imageUrl     = "https://api.met.no/weatherapi/weathericon/1.1/?symbol={code}&content_type={content_type}";
             
     public function __construct($number,$name) {
         $this->name     = $name;
