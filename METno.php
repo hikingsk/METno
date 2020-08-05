@@ -43,7 +43,7 @@ class METno extends METnoFactory {
         $this->apiParameters       .= "lat=".$lat."&lon=".$lon;
 
         if (!is_bool($seeLevel)) {
-            $this->apiParameters   .= "&msl=$seeLevel";
+            $this->apiParameters   .= "&altitude=$seeLevel";
         }
     }
 

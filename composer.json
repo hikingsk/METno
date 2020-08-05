@@ -1,6 +1,6 @@
 {
     "name": "hikingsk/metno",
-    "version" : "1.0.9",
+    "version" : "1.0.10",
     "description": "MET.no API library for fetching weather forecast",
     "type" : "library",
     "keywords" : ["MET.no", "weather", "forecast"],
