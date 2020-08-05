@@ -377,23 +377,12 @@ class METno extends METnoFactory {
                                         $precipitationAttributes    = $forecast->location->precipitation->attributes();
 
                                         $forecastByDay[$fromDate][$fromHour]["symbols"][$toHour]     = array(
-<<<<<<< HEAD
-                                            "from"          =>  $fromHour,       // from hour
-                                            "to"            =>  $toHour,         // to hour
-                                            "difference"    =>  $difference,     // difference in hours betwen from to to
-                                            "symbol"        =>  new self::$classSymbol(
-                                                self::getAttributeValue($symbolAttributes, "number", 0),
-                                                self::getAttributeValue($symbolAttributes, "id")
-                                            ),
-                                            "precipitation" =>  new self::$classPrecipitation(
-=======
                                             "from"          => $fromHour,       // from hour
                                             "to"            => $toHour,         // to hour
                                             "difference"    => $difference,     // difference in hours betwen from to to
                                             "symbol"        => new self::$classSymbol(self::getAttributeValue($symbolAttributes, "number",0),
                                                                                      self::getAttributeValue($symbolAttributes, "id")),
                                             "precipitation" => new self::$classPrecipitation(
->>>>>>> upstream/master
                                                 self::getAttributeValue($precipitationAttributes, "value", 1),
                                                 self::getAttributeValue($precipitationAttributes, "minvalue", 1),
                                                 self::getAttributeValue($precipitationAttributes, "maxvalue", 1)
