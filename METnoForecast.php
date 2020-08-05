@@ -8,7 +8,7 @@
  * 
  */
 
-class METnoForecast implements JsonSerializable {
+class METnoForecast {
     private $parent                     = false;
     
     /** @var METnoSymbol|null */
@@ -305,5 +305,4 @@ class METnoForecast implements JsonSerializable {
     {
         return $this->highClouds;
     }
-
 }
