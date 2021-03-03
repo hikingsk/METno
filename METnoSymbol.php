@@ -17,6 +17,9 @@ class METnoSymbol implements JsonSerializable {
     protected $number       = 1;
     static protected $contentType  = "image/png";
     protected $imageUrl     = "https://api.met.no/weatherapi/weathericon/1.1/?symbol={code}&content_type={content_type}";
+    static private $icons = [
+	    'has_night_version' => ['01', '02', '03', '05', '06', '07', '08', '20', '21', '24', '25', '26', '27', '28', '29', '40', '41', '42', '43', '44', '45'] 
+    ];
             
     public function __construct($number,$name) {
         $this->name     = $name;
@@ -57,6 +60,22 @@ class METnoSymbol implements JsonSerializable {
         }
         
         return $url;
+    }
+    
+    public function getFileName(){
+	    
+	    $number = sprintf('%02d', $this->getNumber());
+	    
+	    if(in_array($number, $this->icons['has_night_version'])){
+		    
+		    if($this->isNight()){
+			    return "{$number}n.png";
+		    } else {
+			    return "{$number}d.png";
+		    }   
+	    }
+	    
+		return "{$number}.png";
     }
     
     protected function isNight() {
