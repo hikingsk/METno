@@ -17,7 +17,7 @@ class METnoSymbol implements JsonSerializable {
     protected $number       = 1;
     static protected $contentType  = "image/png";
     protected $imageUrl     = "https://api.met.no/weatherapi/weathericon/1.1/?symbol={code}&content_type={content_type}";
-    static private $icons = [
+    private $icons = [
 	    'has_night_version' => ['01', '02', '03', '05', '06', '07', '08', '20', '21', '24', '25', '26', '27', '28', '29', '40', '41', '42', '43', '44', '45'] 
     ];
             
