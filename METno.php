@@ -369,8 +369,9 @@ class METno extends METnoFactory {
                                             $difference = (24 - $fromHour) + $toHour;
                                         }
 
-                                        if (!isset($forecast->location->precipitation) || !isset($forecast->location->symbol)) {
-                                            throw new Exception("The XML is invalid - precipitation or symbol not defined", METno::XML_INVALID);
+                                        if (!isset($forecast->location->precipitation, $forecast->location->symbol)) {
+                                            continue;
+                                            //throw new Exception("The XML is invalid - precipitation or symbol not defined", METno::XML_INVALID);
                                         }
 
                                         $symbolAttributes           = $forecast->location->symbol->attributes();
