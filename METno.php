@@ -66,6 +66,8 @@ class METno extends METnoFactory {
             curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
             curl_setopt($curl, CURLOPT_USERAGENT, self::$userAgent);
+            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, self::$connectTimeout);
+            curl_setopt($curl, CURLOPT_TIMEOUT, self::$timeout);
             
             if (self::$logCurl){
                 curl_setopt($curl, CURLOPT_VERBOSE, true);

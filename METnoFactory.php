@@ -114,6 +114,20 @@ class METnoFactory implements METnoInterface {
     static protected $userAgent                 = "";
 
     /**
+     * cURL connect timeout for the MET.no request, in seconds (0 = no limit)
+     * @var int
+     */
+    static protected $connectTimeout            = 10;
+
+    /**
+     * cURL total timeout for the MET.no request, in seconds (0 = no limit).
+     * Without one, a MET.no that accepts the connection and then stalls blocks
+     * the caller until PHP's max_execution_time.
+     * @var int
+     */
+    static protected $timeout                   = 30;
+
+    /**
      * Display error and stop php
      * @param type $set
      */
@@ -270,6 +284,21 @@ class METnoFactory implements METnoInterface {
      * @param string $userAgent - at least 8 characters
      * @return boolean
      */
+    /**
+     * Sets the cURL timeouts of the MET.no request
+     * @param int $connectTimeout seconds to connect (0 = no limit)
+     * @param int $timeout seconds for the whole request (0 = no limit)
+     * @return boolean
+     */
+    static public function setTimeouts($connectTimeout, $timeout) {
+        if (!is_numeric($connectTimeout) || !is_numeric($timeout) || $connectTimeout < 0 || $timeout < 0) {
+            return false;
+        }
+        self::$connectTimeout = (int) $connectTimeout;
+        self::$timeout        = (int) $timeout;
+        return true;
+    }
+
     static public function setUserAgent($userAgent) {
         if (strlen($userAgent) > 8) {
             self::$userAgent = $userAgent;
