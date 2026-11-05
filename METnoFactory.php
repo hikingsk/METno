@@ -400,7 +400,11 @@ class METnoFactory implements METnoInterface {
     static public function truncateCoordinate($value) {
         // %.10F first, so a float like 48.94329 (stored as 48.943289999…) is cut at the
         // decimal digits a human wrote, not at its binary representation.
-        $str = sprintf("%.10F", (float) $value);
+        $value = (float) $value;
+        if (is_nan($value) || is_infinite($value)) {
+            return "0";
+        }
+        $str = sprintf("%.10F", $value);
         $dot = strpos($str, ".");
         $str = rtrim(rtrim(substr($str, 0, $dot + 5), "0"), ".");
         return ($str === "-0" || $str === "") ? "0" : $str;

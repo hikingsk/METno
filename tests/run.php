@@ -362,6 +362,69 @@ test('a corrupt cache file is refetched', function () {
     check(count(FakeMETno::$requests) === 1, 'one request');
 });
 
+test('another worker refreshing: expired copy served, no duplicate request', function () {
+    FakeMETno::$responses = array(ok());
+    $m = new FakeMETno(48.9432, 19.5906);
+    $m->fetchXml();
+    FakeMETno::$now += 10800;
+
+    // a second file handle = another worker (flock is per open file description)
+    $lock = fopen($m->cacheFile() . '.lock', 'c');
+    check(flock($lock, LOCK_EX), 'test holds the refresh lock');
+    $m = new FakeMETno(48.9432, 19.5906);
+    check($m->fetchXml() !== false && $m->isStale(), 'expired copy served while another worker refreshes');
+    check(count(FakeMETno::$requests) === 1, 'no duplicate request');
+    flock($lock, LOCK_UN);
+    fclose($lock);
+
+    FakeMETno::$responses = array(ok());
+    $m = new FakeMETno(48.9432, 19.5906);
+    check($m->fetchXml() !== false && !$m->isStale(), 'refreshes once the lock is free');
+    check(count(FakeMETno::$requests) === 2, 'one refresh');
+});
+
+test('non-finite coordinates', function () {
+    check(METnoFactory::truncateCoordinate(INF) === '0', 'INF');
+    check(METnoFactory::truncateCoordinate(NAN) === '0', 'NAN');
+});
+
+test('Retry-After is capped at one day', function () {
+    FakeMETno::$responses = array(array('code' => 429, 'headers' => array('retry-after' => '99999999')));
+    $m = new FakeMETno(48.9432, 19.5906);
+    $m->fetchXml();
+    FakeMETno::$now += 86400;
+    FakeMETno::$responses = array(ok());
+    $m = new FakeMETno(48.9432, 19.5906);
+    check($m->fetchXml() !== false, 'retried after one day');
+});
+
+test('203 (deprecated/beta product) is a valid response', function () {
+    FakeMETno::$responses = array(array('code' => 203, 'body' => xmlBody()));
+    $m = new FakeMETno(48.9432, 19.5906);
+    check($m->fetchXml() !== false && !$m->isStale(), '203 accepted');
+    FakeMETno::$now += 600;
+    $m = new FakeMETno(48.9432, 19.5906);
+    $m->fetchXml();
+    check(count(FakeMETno::$requests) === 1, '203 cached');
+});
+
+test('a failed cache write is reported', function () {
+    $dir = reset_state();
+    METnoFactory::setCacheDir($dir . 'missing/');
+    rmdir($dir); // replace the cache dir's parent by a file, so mkdir and every write fail
+    file_put_contents(rtrim($dir, '/'), 'x');
+    $log = tempnam(sys_get_temp_dir(), 'metno-log');
+    $old = ini_set('error_log', $log);
+    FakeMETno::$responses = array(ok());
+    $m = new FakeMETno(48.9432, 19.5906);
+    check($m->fetchXml() !== false, 'forecast still served');
+    ini_set('error_log', $old);
+    check(strpos((string) file_get_contents($log), 'cache write failed') !== false, 'error logged');
+    unlink($log);
+    unlink(rtrim($dir, '/'));
+    mkdir($dir);
+});
+
 // ---------------------------------------------------------------------------
 // Garbage collection
 // ---------------------------------------------------------------------------
@@ -375,6 +438,8 @@ test('garbage collection removes old entries, temp files and legacy day folders'
     touch($dir . 'metno-old.cache', FakeMETno::$now - 86400 * 3);
     file_put_contents($dir . 'metno-new.cache', 'x');
     touch($dir . 'metno-new.cache', FakeMETno::$now - 3600);
+    file_put_contents($dir . 'metno-old.cache.lock', '');
+    touch($dir . 'metno-old.cache.lock', FakeMETno::$now - 86400 * 3);
     file_put_contents($dir . 'tmp-metno-abc', 'x');
     touch($dir . 'tmp-metno-abc', FakeMETno::$now - 7200);
 
@@ -386,6 +451,7 @@ test('garbage collection removes old entries, temp files and legacy day folders'
     check(!file_exists($dir . 'metno-old.cache'), 'old entry removed');
     check(file_exists($dir . 'metno-new.cache'), 'recent entry kept');
     check(!file_exists($dir . 'tmp-metno-abc'), 'temp leftover removed');
+    check(!file_exists($dir . 'metno-old.cache.lock'), 'old lock file removed');
 });
 
 reset_state();

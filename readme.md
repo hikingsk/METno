@@ -25,11 +25,14 @@ and the [Locationforecast FAQ](https://docs.api.met.no/doc/locationforecast/FAQ)
   refetches never bunch up at XX:00. `setMinCacheTimes()` can only raise the minimums.
 - **Revalidation**: an expired entry is refetched with `If-Modified-Since` (the previous
   `Last-Modified`); a `304` only extends it.
-- **Failures** (network error, non-200, truncated XML, `429`) are not retried for
+- **Failures** (network error, a status other than 200/203, truncated XML, `429`) are not retried for
   `setErrorBackoff()` seconds (default 10 min, a longer `Retry-After` wins). Meanwhile the last good
   forecast is served if it is not older than `setMaxStale()` (default 24 h); `$forecast->isStale()`
   tells you so.
 - **gzip** responses are accepted.
+- **One refresh per location at a time** (`flock` on `<cache file>.lock`): parallel workers serve the expired copy
+  meanwhile instead of repeating the request. A cache write failure is reported via `error_log` — without a cache
+  every call would go to MET.no.
 - Set a **User-Agent** with your app/domain and a contact e-mail: `METnoFactory::setUserAgent()`.
 
 One cache file per location (`metno-lat…_lon…[_altitude…].cache` in the cache dir — JSON metadata

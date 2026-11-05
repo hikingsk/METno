@@ -476,21 +476,41 @@ class METno extends METnoFactory {
      * - an entry is fresh until max(Expires header, now + minimum caching time for the
      *   region) plus a random delay, so refetches never bunch up (e.g. at XX:00);
      * - an expired entry is revalidated with If-Modified-Since (304 only extends it);
-     * - a failed request (network error, non-200, truncated XML, 429) is not repeated for
+     * - a failed request (network error, non-200/203, truncated XML, 429) is not repeated for
      *   errorBackoff seconds (or Retry-After, if longer) — an older forecast, up to maxStale
-     *   old, is served meanwhile (isStale() is then true).
+     *   old, is served meanwhile (isStale() is then true);
+     * - only one worker refreshes a location at a time, the others serve the expired copy
+     *   (isStale() true) or, having none, wait for that refresh.
      *
      * @return SimpleXMLElement|boolean - false on error (see isError())
      */
     protected function getForecastXML() {
-
+        $lock = null;
         try {
-            $this->stale = false;
+            $xml = $this->loadForecastXML($lock);
+        } catch (Exception $e) {
+            $this->releaseLock($lock);
+            return $this->error($e);
+        }
+        $this->releaseLock($lock);
+        return $xml;
+    }
 
-            $now        = $this->now();
-            $file       = $this->getCacheFileName();
-            $entry      = $this->readCacheEntry($file);
-            $xml        = ($entry !== null && $entry["xml"] !== "") ? $this->parseForecastXML($entry["xml"]) : false;
+    /**
+     * @see getForecastXML()
+     * @param resource|null $lock refresh lock, set when taken — the caller releases it
+     * @return SimpleXMLElement
+     * @throws Exception
+     */
+    protected function loadForecastXML(&$lock) {
+        $this->stale = false;
+        $file        = $this->getCacheFileName();
+
+        // Second pass only after waiting for another worker's refresh (see below)
+        for ($pass = 0; ; $pass++) {
+            $now    = $this->now();
+            $entry  = $this->readCacheEntry($file);
+            $xml    = ($entry !== null && $entry["xml"] !== "") ? $this->parseForecastXML($entry["xml"]) : false;
 
             if ($xml !== false && $now < $entry["fresh_until"]) {
                 return $xml;
@@ -509,63 +529,104 @@ class METno extends METnoFactory {
                     .gmdate("Y-m-d H:i:s", $entry["retry_after"])." UTC", METno::DOWNLOAD_FAILED);
             }
 
-            $response   = $this->httpGet(
-                $this->apiRequest.$this->apiParameters,
-                $xml !== false ? $entry["last_modified"] : null
-            );
-
-            if ($xml !== false && $response["code"] === 304) {
-                $entry["fetched_at"]    = $now;
-                $entry["fresh_until"]   = $this->computeFreshUntil($response["headers"], $now);
-                $entry["retry_after"]   = 0;
-                if (isset($response["headers"]["last-modified"])) {
-                    $entry["last_modified"] = $response["headers"]["last-modified"];
-                }
-                $this->writeCacheEntry($file, $entry);
-                return $xml;
-            }
-
-            if ($response["code"] === 200) {
-                $newXml = $this->parseForecastXML($response["body"]);
-                if ($newXml !== false) {
-                    $this->writeCacheEntry($file, array(
-                        "xml"           => $response["body"],
-                        "fetched_at"    => $now,
-                        "fresh_until"   => $this->computeFreshUntil($response["headers"], $now),
-                        "retry_after"   => 0,
-                        "last_modified" => isset($response["headers"]["last-modified"]) ? $response["headers"]["last-modified"] : null,
-                    ));
-                    $this->maybeCollectGarbage();
-                    return $newXml;
+            // One refresh per location at a time: parallel workers must not repeat the
+            // request. A worker that loses the race serves the expired copy, or — with
+            // nothing to serve — waits for the refresh and re-reads the cache.
+            if ($pass === 0) {
+                $lock = $this->openLock($file);
+                if ($lock !== null && !flock($lock, LOCK_EX | LOCK_NB)) {
+                    if ($canServeStale) {
+                        $this->stale = true;
+                        return $xml;
+                    }
+                    flock($lock, LOCK_EX); // bounded by the other worker's cURL timeout
+                    continue;
                 }
             }
-
-            // Failure: remember it (also when there is no data yet), so the next requests
-            // back off instead of hammering a struggling or rate-limiting MET.no.
-            $backoff = self::$errorBackoff;
-            if (isset($response["headers"]["retry-after"])) {
-                $retryAfter = $response["headers"]["retry-after"];
-                $retryAfter = is_numeric($retryAfter) ? (int) $retryAfter : (int) strtotime($retryAfter) - $now;
-                $backoff    = max($backoff, $retryAfter);
-            }
-            if ($entry === null || $xml === false) {
-                $entry = array("xml" => "", "fetched_at" => 0, "fresh_until" => 0, "last_modified" => null);
-            }
-            $entry["retry_after"] = $now + $backoff;
-            $this->writeCacheEntry($file, $entry);
-
-            if ($canServeStale) {
-                $this->stale = true;
-                return $xml;
-            }
-
-            $reason = $response["error"] !== "" ? $response["error"] : "HTTP Code: ".$response["code"];
-            throw new Exception("Error with downloading file from ".$this->apiRequest.$this->apiParameters
-                ." (".$reason.")", METno::DOWNLOAD_FAILED);
-
-        } catch (Exception $e) {
-            return $this->error($e);
+            break;
         }
+
+        $response   = $this->httpGet(
+            $this->apiRequest.$this->apiParameters,
+            $xml !== false ? $entry["last_modified"] : null
+        );
+
+        if ($xml !== false && $response["code"] === 304) {
+            $entry["fetched_at"]    = $now;
+            $entry["fresh_until"]   = $this->computeFreshUntil($response["headers"], $now);
+            $entry["retry_after"]   = 0;
+            if (isset($response["headers"]["last-modified"])) {
+                $entry["last_modified"] = $response["headers"]["last-modified"];
+            }
+            $this->writeCacheEntry($file, $entry);
+            return $xml;
+        }
+
+        // 203 = deprecated or beta product: still a normal forecast
+        if ($response["code"] === 200 || $response["code"] === 203) {
+            $newXml = $this->parseForecastXML($response["body"]);
+            if ($newXml !== false) {
+                $this->writeCacheEntry($file, array(
+                    "xml"           => $response["body"],
+                    "fetched_at"    => $now,
+                    "fresh_until"   => $this->computeFreshUntil($response["headers"], $now),
+                    "retry_after"   => 0,
+                    "last_modified" => isset($response["headers"]["last-modified"]) ? $response["headers"]["last-modified"] : null,
+                ));
+                $this->maybeCollectGarbage();
+                return $newXml;
+            }
+        }
+
+        // Failure: remember it (also when there is no data yet), so the next requests
+        // back off instead of hammering a struggling or rate-limiting MET.no.
+        $backoff = self::$errorBackoff;
+        if (isset($response["headers"]["retry-after"])) {
+            $retryAfter = $response["headers"]["retry-after"];
+            $retryAfter = is_numeric($retryAfter) ? (int) $retryAfter : (int) strtotime($retryAfter) - $now;
+            // capped, so a bogus value cannot silence a location for months
+            $backoff    = max($backoff, min($retryAfter, 86400));
+        }
+        if ($entry === null || $xml === false) {
+            $entry = array("xml" => "", "fetched_at" => 0, "fresh_until" => 0, "last_modified" => null);
+        }
+        $entry["retry_after"] = $now + $backoff;
+        $this->writeCacheEntry($file, $entry);
+
+        if ($canServeStale) {
+            $this->stale = true;
+            return $xml;
+        }
+
+        $reason = $response["error"] !== "" ? $response["error"] : "HTTP Code: ".$response["code"];
+        throw new Exception("Error with downloading file from ".$this->apiRequest.$this->apiParameters
+            ." (".$reason.")", METno::DOWNLOAD_FAILED);
+    }
+
+    /**
+     * Opens the refresh lock file of a cache entry (null when it cannot be created — the
+     * refresh then simply runs unlocked)
+     * @param string $file cache file
+     * @return resource|null
+     */
+    protected function openLock($file) {
+        $dir = dirname($file);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return null;
+        }
+        $lock = @fopen($file.".lock", "c");
+        return is_resource($lock) ? $lock : null;
+    }
+
+    /**
+     * @param resource|null $lock
+     */
+    protected function releaseLock(&$lock) {
+        if (is_resource($lock)) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+        $lock = null;
     }
 
     /**
@@ -668,6 +729,27 @@ class METno extends METnoFactory {
      * @return boolean
      */
     protected function writeCacheEntry($file, array $entry) {
+        if (!$this->storeCacheEntry($file, $entry)) {
+            // Without a cache every call goes to MET.no, against the TOS — make it visible
+            // (once per process, the log would otherwise flood exactly when the disk is full).
+            static $reported = false;
+            if (!$reported) {
+                $reported = true;
+                error_log("METno: cache write failed for ".$file." — check that ".self::$cacheDir
+                    ." is writable and the disk is not full");
+            }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * @see writeCacheEntry()
+     * @param string $file
+     * @param array  $entry
+     * @return boolean
+     */
+    protected function storeCacheEntry($file, array $entry) {
         $dir = dirname($file);
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
             return false;
@@ -707,10 +789,25 @@ class METno extends METnoFactory {
         $now = $this->now();
         $dir = self::$cacheDir;
 
+        $unusedSince = $now - self::$maxStale - 86400;
         foreach ((array) glob($dir."metno-*.cache") as $file) {
             // mtime = last write (fetch, revalidation or failure): unused for maxStale + 1 day
-            if (is_file($file) && @filemtime($file) < $now - self::$maxStale - 86400) {
+            if (is_file($file) && @filemtime($file) < $unusedSince) {
                 @unlink($file);
+            }
+        }
+        foreach ((array) glob($dir."metno-*.cache.lock") as $lockFile) {
+            // only once its entry is gone, so two workers never lock different inodes
+            if (file_exists(substr($lockFile, 0, -5)) || @filemtime($lockFile) >= $unusedSince) {
+                continue;
+            }
+            $handle = @fopen($lockFile, "c");
+            if (is_resource($handle)) {
+                if (flock($handle, LOCK_EX | LOCK_NB)) { // not held by a refresh right now
+                    @unlink($lockFile);
+                    flock($handle, LOCK_UN);
+                }
+                fclose($handle);
             }
         }
         foreach ((array) glob($dir."tmp-metno-*") as $file) {
