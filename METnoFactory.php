@@ -128,6 +128,48 @@ class METnoFactory implements METnoInterface {
     static protected $timeout                   = 30;
 
     /**
+     * MET.no Terms of Service / Locationforecast FAQ (Nov 2026): the response cache headers
+     * are an absolute minimum, plus a minimum caching time per region — 30 min in the Nordic
+     * region (hourly model updates), 3 h for the rest of the world (6-hourly updates).
+     * These are floors: setMinCacheTimes() can only raise them.
+     */
+    const MIN_CACHE_NORDIC                      = 1800;
+    const MIN_CACHE_WORLD                       = 10800;
+
+    /**
+     * Minimum caching time in seconds for locations in the Nordic region
+     * @var int
+     */
+    static protected $minCacheNordic            = 1800;
+
+    /**
+     * Minimum caching time in seconds for the rest of the world
+     * @var int
+     */
+    static protected $minCacheWorld             = 10800;
+
+    /**
+     * Upper bound of the random delay (seconds) added to every cache lifetime, so refetches
+     * spread out instead of all landing at the same moment (the TOS forbids XX:00 bursts).
+     * @var int
+     */
+    static protected $cacheJitter               = 600;
+
+    /**
+     * Seconds to wait before asking MET.no again after a failed request (5xx, 429, network
+     * error, truncated XML). A longer Retry-After from MET.no wins.
+     * @var int
+     */
+    static protected $errorBackoff              = 600;
+
+    /**
+     * How old (seconds since MET.no last confirmed the data) a cached forecast may get and
+     * still be served when MET.no is failing. Older than this → the request fails.
+     * @var int
+     */
+    static protected $maxStale                  = 86400;
+
+    /**
      * Display error and stop php
      * @param type $set
      */
@@ -277,14 +319,6 @@ class METnoFactory implements METnoInterface {
     }
     
     /**
-     * Sets UserAgent for cURL requests
-     * 
-     * - as of MET.no terms of service, UserAgent should contain your app information including email address
-     * 
-     * @param string $userAgent - at least 8 characters
-     * @return boolean
-     */
-    /**
      * Sets the cURL timeouts of the MET.no request
      * @param int $connectTimeout seconds to connect (0 = no limit)
      * @param int $timeout seconds for the whole request (0 = no limit)
@@ -299,6 +333,114 @@ class METnoFactory implements METnoInterface {
         return true;
     }
 
+    /**
+     * Raises the minimum caching times (seconds). Values below the MET.no minimums
+     * (MIN_CACHE_NORDIC / MIN_CACHE_WORLD) are rejected.
+     * @param int $nordic
+     * @param int $world
+     * @return boolean
+     */
+    static public function setMinCacheTimes($nordic, $world) {
+        if (!is_numeric($nordic) || !is_numeric($world)
+            || $nordic < self::MIN_CACHE_NORDIC || $world < self::MIN_CACHE_WORLD) {
+            return false;
+        }
+        self::$minCacheNordic = (int) $nordic;
+        self::$minCacheWorld  = (int) $world;
+        return true;
+    }
+
+    /**
+     * Sets the upper bound of the random delay added to every cache lifetime (seconds)
+     * @param int $seconds
+     * @return boolean
+     */
+    static public function setCacheJitter($seconds) {
+        if (!is_numeric($seconds) || $seconds < 0) {
+            return false;
+        }
+        self::$cacheJitter = (int) $seconds;
+        return true;
+    }
+
+    /**
+     * Sets how long to wait after a failed MET.no request before trying again (seconds, ≥ 60)
+     * @param int $seconds
+     * @return boolean
+     */
+    static public function setErrorBackoff($seconds) {
+        if (!is_numeric($seconds) || $seconds < 60) {
+            return false;
+        }
+        self::$errorBackoff = (int) $seconds;
+        return true;
+    }
+
+    /**
+     * Sets how old a cached forecast may get and still be served while MET.no fails
+     * (seconds, 0 = never serve stale data)
+     * @param int $seconds
+     * @return boolean
+     */
+    static public function setMaxStale($seconds) {
+        if (!is_numeric($seconds) || $seconds < 0) {
+            return false;
+        }
+        self::$maxStale = (int) $seconds;
+        return true;
+    }
+
+    /**
+     * Truncates (not rounds) a coordinate to 4 decimals, as MET.no requires — more decimals
+     * get 403 Forbidden and defeat caching. Returned as a string without trailing zeros,
+     * so it can be used both in the request URL and in the cache file name.
+     * @param float|string $value
+     * @return string
+     */
+    static public function truncateCoordinate($value) {
+        // %.10F first, so a float like 48.94329 (stored as 48.943289999…) is cut at the
+        // decimal digits a human wrote, not at its binary representation.
+        $str = sprintf("%.10F", (float) $value);
+        $dot = strpos($str, ".");
+        $str = rtrim(rtrim(substr($str, 0, $dot + 5), "0"), ".");
+        return ($str === "-0" || $str === "") ? "0" : $str;
+    }
+
+    /**
+     * Is the location inside the Nordic region (hourly-updated forecast, shorter minimum
+     * caching time)? A tight box around Norway, Sweden, Finland and Denmark (it also catches
+     * the Baltic states, which the hourly MET Nordic model covers too) — Iceland, Svalbard
+     * and the Faroes fall outside: a Nordic point treated as non-Nordic is only cached longer
+     * than needed, whereas the opposite would break the TOS.
+     * @param float $lat
+     * @param float $lon
+     * @return boolean
+     */
+    static public function isNordic($lat, $lon) {
+        $lat = (float) $lat;
+        $lon = (float) $lon;
+        return $lat >= 54.5 && $lat <= 71.5 && $lon >= 4.0 && $lon <= 32.0;
+    }
+
+    /**
+     * Minimum caching time in seconds for the location
+     * @param float $lat
+     * @param float $lon
+     * @return int
+     */
+    static public function getMinCacheTime($lat, $lon) {
+        return self::isNordic($lat, $lon) ? self::$minCacheNordic : self::$minCacheWorld;
+    }
+
+    /**
+     * Sets UserAgent for cURL requests
+     *
+     * - as of MET.no terms of service, UserAgent must identify your app (domain or app name)
+     *   and contain contact information (e-mail or website)
+     *
+     * @param string $userAgent - at least 8 characters
+     * @return boolean
+     */
     static public function setUserAgent($userAgent) {
         if (strlen($userAgent) > 8) {
             self::$userAgent = $userAgent;

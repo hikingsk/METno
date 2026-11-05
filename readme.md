@@ -2,8 +2,7 @@
 
 Small library for getting forecast for given coordinates. Updated to newest API, originally made in 2012.
 
-Endpoint: http://api.met.no/weatherapi/
-Endpoint version: 1.9
+Endpoint: https://api.met.no/weatherapi/locationforecast/2.0/classic
 
 ## Usage
 
@@ -15,9 +14,29 @@ Add to composer require (requires addid this GIT repository as VCS repo in your 
 
 	"hikingsk/metno": ">=1.0.0"
 
-For best clean of cached xml files use a cron with sh script like this (delete files older than 1 day):
+## Caching and MET.no Terms of Service
 
-	find _METcache/ -mtime +1 -type f -delete
+Since 1.0.17 the library follows the [MET.no Terms of Service](https://docs.api.met.no/doc/TermsOfService.html)
+and the [Locationforecast FAQ](https://docs.api.met.no/doc/locationforecast/FAQ) (Nov 2026 revision):
+
+- **Coordinates** are truncated to 4 decimals (more decimals → `403`, and they defeat caching).
+- **Minimum caching time**: 30 min in the Nordic region, 3 h for the rest of the world — or longer
+  when the `Expires` header says so — plus a random delay (`setCacheJitter()`, default ≤ 10 min) so
+  refetches never bunch up at XX:00. `setMinCacheTimes()` can only raise the minimums.
+- **Revalidation**: an expired entry is refetched with `If-Modified-Since` (the previous
+  `Last-Modified`); a `304` only extends it.
+- **Failures** (network error, non-200, truncated XML, `429`) are not retried for
+  `setErrorBackoff()` seconds (default 10 min, a longer `Retry-After` wins). Meanwhile the last good
+  forecast is served if it is not older than `setMaxStale()` (default 24 h); `$forecast->isStale()`
+  tells you so.
+- **gzip** responses are accepted.
+- Set a **User-Agent** with your app/domain and a contact e-mail: `METnoFactory::setUserAgent()`.
+
+One cache file per location (`metno-lat…_lon…[_altitude…].cache` in the cache dir — JSON metadata
+line + raw XML), written atomically. Unused files, temp files and the per-day folders of older
+versions are cleaned up automatically, no cron needed.
+
+Tests (no network, PHP ≥ 5.3): `php tests/run.php`
 
 ## METnoDay
 

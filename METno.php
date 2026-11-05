@@ -32,6 +32,19 @@ class METno extends METnoFactory {
     protected $forecastByDay    = array();
 
     /**
+     * Truncated coordinates (strings, max 4 decimals) of the request
+     * @var string
+     */
+    protected $lat              = "0";
+    protected $lon              = "0";
+
+    /**
+     * True when MET.no failed and an older cached forecast was served instead
+     * @var boolean
+     */
+    protected $stale            = false;
+
+    /**
      * Constructs METno class with specified $lat $lon location and option seelevel
      *
      * @param <decimal>         $lat
@@ -40,55 +53,84 @@ class METno extends METnoFactory {
      */
     public function __construct($lat, $lon, $seeLevel = false) {
 
-        $this->apiParameters       .= "lat=".$lat."&lon=".$lon;
+        // MET.no TOS: max 4 decimals (more → 403), which also keeps the cache hit rate up
+        $this->lat                  = self::truncateCoordinate($lat);
+        $this->lon                  = self::truncateCoordinate($lon);
+        $this->apiParameters       .= "lat=".$this->lat."&lon=".$this->lon;
 
-        if (!is_bool($seeLevel)) {
-            $this->apiParameters   .= "&altitude=$seeLevel";
+        if ($seeLevel !== false && $seeLevel !== true && $seeLevel !== null && $seeLevel !== "") {
+            $this->apiParameters   .= "&altitude=".(int) round((float) $seeLevel);
         }
     }
 
     /**
-     * Sends CURL request and returns the content if no error
-     * @param type $url
-     * @return boolean|string
-     * @throws Exception
+     * Was the forecast served from an expired cache entry because MET.no failed?
+     * @return boolean
      */
-    protected function sendRequest($url) {
-        
-        $userAgent = (self::$userAgent == "") ? strip_tags($_SERVER['SERVER_SIGNATURE']) : self::$userAgent;
-        
-        try {
+    public function isStale() {
+        return $this->stale;
+    }
 
-            $curl = curl_init();
+    /**
+     * Sends the GET request to MET.no
+     *
+     * @param string      $url
+     * @param string|null $ifModifiedSince value of the previous Last-Modified header
+     * @return array {code:int, body:string, headers:array<lowercase name, value>, error:string}
+     */
+    protected function httpGet($url, $ifModifiedSince = null) {
 
-            curl_setopt($curl, CURLOPT_URL, $url);
-            curl_setopt($curl, CURLOPT_HEADER, 0);
-            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($curl, CURLOPT_USERAGENT, self::$userAgent);
-            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, self::$connectTimeout);
-            curl_setopt($curl, CURLOPT_TIMEOUT, self::$timeout);
-            
-            if (self::$logCurl){
-                curl_setopt($curl, CURLOPT_VERBOSE, true);
-                $verbose = fopen(self::$cacheDir."curl.log", 'a+');
-                curl_setopt($curl, CURLOPT_STDERR, $verbose);
-            }
-
-            $content = curl_exec($curl);
-
-            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-            curl_close($curl);
-
-            if($this->isValidXml($content)) {
-                return $content;
-            } else {
-                throw new Exception("Error with downloading file from $url with HTTP Code: $httpCode", METno::DOWNLOAD_FAILED);
-            }
-        } catch (Exception $e) {
-            return $this->error($e);
+        $userAgent = self::$userAgent;
+        if ($userAgent == "" && isset($_SERVER['SERVER_SIGNATURE'])) {
+            $userAgent = trim(strip_tags($_SERVER['SERVER_SIGNATURE']));
         }
-        return false;
+
+        $headers = array();
+        $curl    = curl_init();
+
+        curl_setopt($curl, CURLOPT_URL, $url);
+        curl_setopt($curl, CURLOPT_HEADER, 0);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($curl, CURLOPT_USERAGENT, $userAgent);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, self::$connectTimeout);
+        curl_setopt($curl, CURLOPT_TIMEOUT, self::$timeout);
+        // "" = advertise every encoding cURL supports (gzip, deflate) and decode transparently
+        curl_setopt($curl, CURLOPT_ENCODING, "");
+        if ($ifModifiedSince !== null && $ifModifiedSince !== "") {
+            curl_setopt($curl, CURLOPT_HTTPHEADER, array("If-Modified-Since: ".$ifModifiedSince));
+        }
+        curl_setopt($curl, CURLOPT_HEADERFUNCTION, function ($ch, $line) use (&$headers) {
+            if (stripos($line, "HTTP/") === 0) {
+                $headers = array(); // a redirect starts a new header block
+            } else if (strpos($line, ":") !== false) {
+                list($name, $value) = explode(":", $line, 2);
+                $headers[strtolower(trim($name))] = trim($value);
+            }
+            return strlen($line);
+        });
+
+        $verbose = null;
+        if (self::$logCurl){
+            curl_setopt($curl, CURLOPT_VERBOSE, true);
+            $verbose = fopen(self::$cacheDir."curl.log", 'a+');
+            curl_setopt($curl, CURLOPT_STDERR, $verbose);
+        }
+
+        $body     = curl_exec($curl);
+        $code     = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $error    = curl_error($curl);
+        curl_close($curl);
+        if (is_resource($verbose)) {
+            fclose($verbose);
+        }
+
+        return array(
+            "code"    => $code,
+            "body"    => is_string($body) ? $body : "",
+            "headers" => $headers,
+            "error"   => $error,
+        );
     }
 
     /**
@@ -101,13 +143,14 @@ class METno extends METnoFactory {
             return false;
         }
 
-        libxml_use_internal_errors(true);
+        $previous = libxml_use_internal_errors(true);
 
         $doc = new DOMDocument();
         $doc->loadXML($xmlContent);
 
         $errors = libxml_get_errors();
         libxml_clear_errors();
+        libxml_use_internal_errors($previous);
 
         return empty($errors);
 
@@ -426,70 +469,259 @@ class METno extends METnoFactory {
     }
 
     /**
-     * Gets forecast XML by location and detects if the base structure is valide
-     * and returns it for other use
-     * @return boolean - if the xml is valide and download progress is success
-     * @throws Exception
+     * Gets forecast XML for the location — from the cache while it is fresh, otherwise from
+     * MET.no — and checks the base structure.
+     *
+     * Caching follows the MET.no Terms of Service:
+     * - an entry is fresh until max(Expires header, now + minimum caching time for the
+     *   region) plus a random delay, so refetches never bunch up (e.g. at XX:00);
+     * - an expired entry is revalidated with If-Modified-Since (304 only extends it);
+     * - a failed request (network error, non-200, truncated XML, 429) is not repeated for
+     *   errorBackoff seconds (or Retry-After, if longer) — an older forecast, up to maxStale
+     *   old, is served meanwhile (isStale() is then true).
+     *
+     * @return SimpleXMLElement|boolean - false on error (see isError())
      */
     protected function getForecastXML() {
 
         try {
-            $cacheSubFolder     = date("Ymd")."/";
-            $cacheFileName      = self::$cacheDir.$cacheSubFolder.$this->apiParameters."-".date("H").".xml"; // prepare name of cache file by hour
+            $this->stale = false;
 
-            if (file_exists($cacheFileName)) {
-                $xml            = simplexml_load_file($cacheFileName);
-            } else {
+            $now        = $this->now();
+            $file       = $this->getCacheFileName();
+            $entry      = $this->readCacheEntry($file);
+            $xml        = ($entry !== null && $entry["xml"] !== "") ? $this->parseForecastXML($entry["xml"]) : false;
 
-                $apiResponse    = $this->sendRequest($this->apiRequest.$this->apiParameters); // send request to api
-
-                if (is_bool($apiResponse)) { // failed to download file and on die is false
-                    return false;
-                }
-
-                if (!is_dir(self::$cacheDir)) { // cache folder is not created
-                    mkdir(self::$cacheDir);
-                }
-
-                if (!is_dir(self::$cacheDir.$cacheSubFolder)) {
-                    mkdir(self::$cacheDir.$cacheSubFolder);
-                }
-
-                $xml            = simplexml_load_string($apiResponse);
-
-                /**
-                 * Create hour cache file and delete previous cache file HOUR - 1
-                 */
-                $cache          = fopen($cacheFileName, "w");
-
-                fwrite($cache, $apiResponse);
-                fclose($cache);
-
-                // remove the previous hour
-                $previousHour   = date("H",strtotime("-1 HOUR"));
-
-                $cacheFileOld   = self::$cacheDir.$cacheSubFolder.$this->apiParameters."-".$previousHour.".xml";
-
-                if (file_exists($cacheFileOld)) {
-                    @unlink($cacheFileOld);
-                }
-
-                // remove the previous day
-
-                $cacheSubFolder     = date("Ymd",strtotime("-1 DAY"))."/";
-
-                if (is_dir(self::$cacheDir.$cacheSubFolder)) {
-                    $this->rmdirRecursively(self::$cacheDir.$cacheSubFolder);
-                }
-            }
-
-            if (!is_bool($xml) && isset($xml->product) && is_object($xml->product) && isset($xml->product->time)) {
+            if ($xml !== false && $now < $entry["fresh_until"]) {
                 return $xml;
-            } else {
-                throw new Exception("The XML is invalid", METno::XML_INVALID);
             }
+
+            $canServeStale = $xml !== false && self::$maxStale > 0
+                && $now - $entry["fetched_at"] <= self::$maxStale;
+
+            // MET.no failed recently — do not ask again before the backoff ends
+            if ($entry !== null && $now < $entry["retry_after"]) {
+                if ($canServeStale) {
+                    $this->stale = true;
+                    return $xml;
+                }
+                throw new Exception("MET.no request for ".$this->apiParameters." failed recently, next attempt after "
+                    .gmdate("Y-m-d H:i:s", $entry["retry_after"])." UTC", METno::DOWNLOAD_FAILED);
+            }
+
+            $response   = $this->httpGet(
+                $this->apiRequest.$this->apiParameters,
+                $xml !== false ? $entry["last_modified"] : null
+            );
+
+            if ($xml !== false && $response["code"] === 304) {
+                $entry["fetched_at"]    = $now;
+                $entry["fresh_until"]   = $this->computeFreshUntil($response["headers"], $now);
+                $entry["retry_after"]   = 0;
+                if (isset($response["headers"]["last-modified"])) {
+                    $entry["last_modified"] = $response["headers"]["last-modified"];
+                }
+                $this->writeCacheEntry($file, $entry);
+                return $xml;
+            }
+
+            if ($response["code"] === 200) {
+                $newXml = $this->parseForecastXML($response["body"]);
+                if ($newXml !== false) {
+                    $this->writeCacheEntry($file, array(
+                        "xml"           => $response["body"],
+                        "fetched_at"    => $now,
+                        "fresh_until"   => $this->computeFreshUntil($response["headers"], $now),
+                        "retry_after"   => 0,
+                        "last_modified" => isset($response["headers"]["last-modified"]) ? $response["headers"]["last-modified"] : null,
+                    ));
+                    $this->maybeCollectGarbage();
+                    return $newXml;
+                }
+            }
+
+            // Failure: remember it (also when there is no data yet), so the next requests
+            // back off instead of hammering a struggling or rate-limiting MET.no.
+            $backoff = self::$errorBackoff;
+            if (isset($response["headers"]["retry-after"])) {
+                $retryAfter = $response["headers"]["retry-after"];
+                $retryAfter = is_numeric($retryAfter) ? (int) $retryAfter : (int) strtotime($retryAfter) - $now;
+                $backoff    = max($backoff, $retryAfter);
+            }
+            if ($entry === null || $xml === false) {
+                $entry = array("xml" => "", "fetched_at" => 0, "fresh_until" => 0, "last_modified" => null);
+            }
+            $entry["retry_after"] = $now + $backoff;
+            $this->writeCacheEntry($file, $entry);
+
+            if ($canServeStale) {
+                $this->stale = true;
+                return $xml;
+            }
+
+            $reason = $response["error"] !== "" ? $response["error"] : "HTTP Code: ".$response["code"];
+            throw new Exception("Error with downloading file from ".$this->apiRequest.$this->apiParameters
+                ." (".$reason.")", METno::DOWNLOAD_FAILED);
+
         } catch (Exception $e) {
             return $this->error($e);
+        }
+    }
+
+    /**
+     * Parses forecast XML, returns false when it is not well-formed or lacks forecast data
+     * (a truncated 200 response must never be accepted, let alone cached)
+     * @param string $content
+     * @return SimpleXMLElement|boolean
+     */
+    protected function parseForecastXML($content) {
+        if (!is_string($content) || !$this->isValidXml($content)) {
+            return false;
+        }
+        $previous = libxml_use_internal_errors(true);
+        $xml      = simplexml_load_string($content);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if ($xml !== false && isset($xml->product) && is_object($xml->product) && isset($xml->product->time)) {
+            return $xml;
+        }
+        return false;
+    }
+
+    /**
+     * Until when (unix time) a fresh response may be served without asking MET.no
+     * @param array $headers lowercase response headers
+     * @param int   $now
+     * @return int
+     */
+    protected function computeFreshUntil(array $headers, $now) {
+        $freshUntil = $now + self::getMinCacheTime($this->lat, $this->lon);
+        if (isset($headers["expires"])) {
+            $expires = strtotime($headers["expires"]);
+            if ($expires !== false && $expires > $freshUntil) {
+                $freshUntil = $expires;
+            }
+        }
+        return $freshUntil + $this->jitter();
+    }
+
+    /**
+     * Current unix time (overridable for tests)
+     * @return int
+     */
+    protected function now() {
+        return time();
+    }
+
+    /**
+     * Random delay added to a cache lifetime (overridable for tests)
+     * @return int
+     */
+    protected function jitter() {
+        return self::$cacheJitter > 0 ? mt_rand(0, self::$cacheJitter) : 0;
+    }
+
+    /**
+     * @return string
+     */
+    protected function getCacheFileName() {
+        return self::$cacheDir."metno-".str_replace(array("=", "&"), array("", "_"), $this->apiParameters).".cache";
+    }
+
+    /**
+     * Reads a cache entry. File format: one line of JSON metadata, then the raw XML
+     * (kept out of the JSON, so the body is stored byte for byte).
+     * @param string $file
+     * @return array|null
+     */
+    protected function readCacheEntry($file) {
+        if (!is_file($file)) {
+            return null;
+        }
+        $content = @file_get_contents($file);
+        if (!is_string($content)) {
+            return null;
+        }
+        $newline = strpos($content, "\n");
+        if ($newline === false) {
+            return null;
+        }
+        $meta = json_decode(substr($content, 0, $newline), true);
+        if (!is_array($meta)) {
+            return null;
+        }
+        return array(
+            "xml"           => (string) substr($content, $newline + 1),
+            "fetched_at"    => isset($meta["fetched_at"]) ? (int) $meta["fetched_at"] : 0,
+            "fresh_until"   => isset($meta["fresh_until"]) ? (int) $meta["fresh_until"] : 0,
+            "retry_after"   => isset($meta["retry_after"]) ? (int) $meta["retry_after"] : 0,
+            "last_modified" => isset($meta["last_modified"]) && is_string($meta["last_modified"]) ? $meta["last_modified"] : null,
+        );
+    }
+
+    /**
+     * Writes a cache entry atomically (temp file + rename), so a concurrent reader never
+     * sees half a file. A failed write is ignored — the forecast itself is still valid.
+     * @param string $file
+     * @param array  $entry
+     * @return boolean
+     */
+    protected function writeCacheEntry($file, array $entry) {
+        $dir = dirname($file);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return false;
+        }
+        $meta = json_encode(array(
+            "fetched_at"    => (int) $entry["fetched_at"],
+            "fresh_until"   => (int) $entry["fresh_until"],
+            "retry_after"   => (int) $entry["retry_after"],
+            "last_modified" => $entry["last_modified"],
+        ));
+        $tmp = @tempnam($dir, "tmp-metno-");
+        if ($tmp === false) {
+            return false;
+        }
+        if (@file_put_contents($tmp, $meta."\n".$entry["xml"]) === false || !@rename($tmp, $file)) {
+            @unlink($tmp);
+            return false;
+        }
+        @chmod($file, 0664);
+        return true;
+    }
+
+    /**
+     * Occasionally (1 in 50 successful fetches) removes cache files nobody asked for in a
+     * while, leftover temp files and the per-day folders of library versions < 1.0.17.
+     */
+    protected function maybeCollectGarbage() {
+        if (mt_rand(1, 50) === 1) {
+            $this->collectGarbage();
+        }
+    }
+
+    /**
+     * @see maybeCollectGarbage()
+     */
+    protected function collectGarbage() {
+        $now = $this->now();
+        $dir = self::$cacheDir;
+
+        foreach ((array) glob($dir."metno-*.cache") as $file) {
+            // mtime = last write (fetch, revalidation or failure): unused for maxStale + 1 day
+            if (is_file($file) && @filemtime($file) < $now - self::$maxStale - 86400) {
+                @unlink($file);
+            }
+        }
+        foreach ((array) glob($dir."tmp-metno-*") as $file) {
+            if (is_file($file) && @filemtime($file) < $now - 3600) {
+                @unlink($file);
+            }
+        }
+        foreach ((array) glob($dir."[0-9]*", GLOB_ONLYDIR) as $legacyDir) {
+            if (preg_match("~^[0-9]{8}$~", basename($legacyDir))) {
+                $this->rmdirRecursively($legacyDir);
+            }
         }
     }
 
@@ -499,9 +731,9 @@ class METno extends METnoFactory {
      * @return bool
      */
     public function rmdirRecursively($dir) {
-        $files = array_diff(scandir($dir), array('.', '..'));
+        $files = array_diff((array) @scandir($dir), array('.', '..'));
         foreach ($files as $file) {
-            (is_dir("$dir/$file")) ? rmdirRecursively("$dir/$file") : @unlink("$dir/$file");
+            (is_dir("$dir/$file")) ? $this->rmdirRecursively("$dir/$file") : @unlink("$dir/$file");
         }
         return @rmdir($dir);
     }
